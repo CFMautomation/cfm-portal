@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Connected Flow Management — Payment Portal</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f5f7;color:#111;-webkit-font-smoothing:antialiased;}
+  input,select,button{font-family:inherit;}
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+//  PASTE YOUR SUPABASE DETAILS HERE
+//  Both values come from: supabase.com → your project
+//  → Settings → API
+// ════════════════════════════════════════════════════════════════════
+const SUPABASE_URL  = "https://ehitfbjgkezaylosgqzu.supabase.co";
+const SUPABASE_KEY  = "sb_publishable_ceZR-rIZ36MdF-hlKdlbew_3PHYK_IZ";
+// ════════════════════════════════════════════════════════════════════
+
+const SETUP_NEEDED = SUPABASE_URL === "YOUR_SUPABASE_URL";
+if (!SETUP_NEEDED) {
+  window._sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+}
+</script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+const sb = window._sb;
+
+// ── Colours ────────────────────────────────────────────────────────────────
+const C = {
+  bg:"#ffffff", bgPage:"#f4f5f7", bgMuted:"#f8f9fa",
+  border:"#e5e7eb", borderMd:"#d1d5db",
+  text:"#111827", muted:"#6b7280", hint:"#9ca3af",
+  teal:"#0f766e", tealLt:"#ccfbf1",
+  danger:"#dc2626", success:"#16a34a",
+  yellow:"#fefce8", yellowBorder:"#fde047", yellowText:"#713f12",
+};
+
+const card    = {background:C.bg,border:`1px solid ${C.border}`,borderRadius:12,padding:"1.25rem"};
+const primBtn = {padding:"9px 20px",borderRadius:8,border:"none",background:C.teal,color:"#fff",fontSize:14,fontWeight:500,cursor:"pointer"};
+const outBtn  = {padding:"7px 14px",borderRadius:8,border:`1px solid ${C.borderMd}`,background:"transparent",color:C.text,fontSize:13,cursor:"pointer"};
+const danBtn  = {padding:"8px 16px",borderRadius:8,border:"none",background:C.danger,color:"#fff",fontSize:13,cursor:"pointer"};
+const inp     = {width:"100%",padding:"9px 12px",border:`1px solid ${C.borderMd}`,borderRadius:8,background:C.bgMuted,color:C.text,fontSize:14,outline:"none"};
+const lbl     = {fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:5};
+
+function getWeekLabel(){
+  const now=new Date(),day=now.getDay()||7;
+  const mon=new Date(now); mon.setDate(now.getDate()-day+1);
+  const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+  const fmt=d=>d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+  return `${fmt(mon)} – ${fmt(sun)} ${now.getFullYear()}`;
+}
+
+function compressImage(dataUrl){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height,max=1200;
+      if(w>max){h=Math.round(h*max/w);w=max;}
+      const c=document.createElement("canvas");
+      c.width=w;c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      resolve(c.toDataURL("image/jpeg",0.78));
+    };
+    img.src=dataUrl;
+  });
+}
+
+function Avatar({name,size=34}){
+  const initials=(name||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();
+  const palette=["#0f766e","#0284c7","#7c3aed","#b45309","#be123c","#065f46","#1e40af"];
+  const color=palette[(name||"").charCodeAt(0)%palette.length];
+  return <div style={{width:size,height:size,borderRadius:"50%",background:color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.36,fontWeight:600,flexShrink:0,userSelect:"none"}}>{initials}</div>;
+}
+
+function TopBar({user,onLogout}){
+  return(
+    <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,height:56,padding:"0 1.25rem",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:30,height:30,borderRadius:8,background:C.teal,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <div>
+          <p style={{margin:0,fontSize:13,fontWeight:600,color:C.text,lineHeight:1.2}}>Connected Flow Management</p>
+          <p style={{margin:0,fontSize:11,color:C.muted,lineHeight:1.2}}>Payment Portal</p>
+        </div>
+        {user?.role==="admin"&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:12,background:C.tealLt,color:C.teal,border:`1px solid ${C.teal}`,marginLeft:4,fontWeight:600}}>Admin</span>}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <Avatar name={user?.name||"?"} size={28}/>
+        <button style={outBtn} onClick={onLogout}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+function ImageModal({item,onClose,showModel}){
+  useEffect(()=>{const fn=e=>{if(e.key==="Escape")onClose();};window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn);},[]);
+  return(
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999,padding:"1rem"}}>
+      <div onClick={e=>e.stopPropagation()} style={{...card,maxWidth:680,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {showModel&&<Avatar name={item.model_name} size={36}/>}
+            <div>
+              {showModel&&<p style={{margin:0,fontSize:14,fontWeight:600}}>{item.model_name}</p>}
+              <p style={{margin:0,fontSize:13,color:C.muted}}>{item.week}</p>
+              {item.amount&&<p style={{margin:"2px 0 0",fontSize:14,fontWeight:600,color:C.teal}}>{item.amount}</p>}
+            </div>
+          </div>
+          <button style={outBtn} onClick={onClose}>✕ Close</button>
+        </div>
+        <img src={item.image} alt="Payment screenshot" style={{width:"100%",borderRadius:8}}/>
+        <p style={{margin:"10px 0 0",fontSize:11,color:C.hint}}>Uploaded {new Date(item.uploaded_at).toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── SETUP SCREEN ─────────────────────────────────────────────────────────────
+function SetupScreen(){
+  const sql=`-- Run this in Supabase → SQL Editor → New query
+
+create table if not exists users (
+  id uuid default gen_random_uuid() primary key,
+  username text unique not null,
+  password text not null,
+  role text not null default 'model',
+  name text not null,
+  created_at timestamptz default now()
+);
+
+create table if not exists uploads (
+  id uuid default gen_random_uuid() primary key,
+  model_id text not null,
+  model_name text not null,
+  week text not null,
+  amount text,
+  image text not null,
+  uploaded_at timestamptz default now()
+);
+
+alter table users enable row level security;
+alter table uploads enable row level security;
+
+create policy "public_access" on users for all using (true) with check (true);
+create policy "public_access" on uploads for all using (true) with check (true);`;
+
+  const [copied,setCopied]=useState(false);
+  const copy=()=>{navigator.clipboard.writeText(sql).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});};
+
+  const steps=[
+    {n:1,title:"Create a free Supabase project",body:<>Go to <strong>supabase.com</strong> → Sign in with GitHub → New project. Give it any name (e.g. cfm-portal), set a database password, pick any region, click Create project. Wait about a minute for it to finish.</>},
+    {n:2,title:"Create your database tables",body:<>Inside your project go to the <strong>SQL Editor</strong> (left sidebar) → New query → paste the SQL below → click Run.</>},
+    {n:3,title:"Get your two keys",body:<>Go to <strong>Settings → API</strong> (left sidebar). Copy two values: the <strong>Project URL</strong> and the <strong>anon / public</strong> key.</>},
+    {n:4,title:"Paste them into this file",body:<>Open <strong>index.html</strong> in Notepad (right-click → Open with → Notepad). Find the section near the top that says PASTE YOUR SUPABASE DETAILS HERE. Replace <code style={{background:"#f3f4f6",padding:"1px 5px",borderRadius:4,fontSize:12}}>YOUR_SUPABASE_URL</code> and <code style={{background:"#f3f4f6",padding:"1px 5px",borderRadius:4,fontSize:12}}>YOUR_SUPABASE_ANON_KEY</code> with your real values. Save the file.</>},
+    {n:5,title:"Host it on GitHub Pages",body:<>On GitHub create a new <strong>public</strong> repository → upload your <strong>index.html</strong> file → go to Settings → Pages → Source: Deploy from a branch → Branch: main → folder: / (root) → Save. After a minute you'll get a live URL like <strong>yourusername.github.io/cfm-portal</strong> — share that with everyone.</>},
+  ];
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bgPage,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{maxWidth:600,width:"100%"}}>
+        <div style={{textAlign:"center",marginBottom:"1.5rem"}}>
+          <div style={{width:52,height:52,borderRadius:14,background:C.teal,margin:"0 auto 14px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          </div>
+          <h1 style={{fontSize:20,fontWeight:700,color:C.text,margin:"0 0 6px"}}>Connected Flow Management</h1>
+          <p style={{fontSize:13,color:C.muted}}>One-time setup required — takes about 10 minutes.</p>
+        </div>
+
+        <div style={{...card,boxShadow:"0 1px 8px rgba(0,0,0,0.07)",marginBottom:"1rem"}}>
+          <h2 style={{fontSize:15,fontWeight:600,margin:"0 0 1.25rem",color:C.text}}>Setup Steps</h2>
+          {steps.map((s,i)=>(
+            <div key={s.n} style={{display:"flex",gap:14,marginBottom:i<steps.length-1?20:0}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:C.teal,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0,marginTop:2}}>{s.n}</div>
+              <div style={{flex:1}}>
+                <p style={{margin:"0 0 4px",fontSize:14,fontWeight:600,color:C.text}}>{s.title}</p>
+                <p style={{margin:0,fontSize:13,color:C.muted,lineHeight:1.6}}>{s.body}</p>
+                {s.n===2&&(
+                  <div style={{marginTop:10,background:"#1e1e2e",borderRadius:8,padding:"12px 14px",position:"relative"}}>
+                    <pre style={{margin:0,fontSize:11,color:"#a6e3a1",fontFamily:"monospace",whiteSpace:"pre-wrap",lineHeight:1.6}}>{sql}</pre>
+                    <button onClick={copy} style={{position:"absolute",top:10,right:10,padding:"4px 10px",borderRadius:6,border:"none",background:copied?"#16a34a":"#374151",color:"#fff",fontSize:11,cursor:"pointer"}}>
+                      {copied?"Copied!":"Copy SQL"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{background:C.yellow,border:`1px solid ${C.yellowBorder}`,borderRadius:8,padding:"10px 14px"}}>
+          <p style={{margin:0,fontSize:12,color:C.yellowText,lineHeight:1.5}}>
+            <strong>Once live:</strong> Create accounts on your laptop and your models can log in instantly on their phones. All data syncs in real time across every device.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── LOGIN ─────────────────────────────────────────────────────────────────────
+function LoginPage({onLogin}){
+  const [username,setUsername]=useState("");
+  const [password,setPassword]=useState("");
+  const [error,setError]=useState("");
+  const [loading,setLoading]=useState(false);
+
+  const submit=async()=>{
+    if(!username||!password){setError("Please enter your username and password.");return;}
+    setLoading(true);setError("");
+    try{
+      const{data,error:e}=await sb.from("users").select("*").eq("username",username.toLowerCase().trim()).single();
+      if(e||!data){setError("Invalid username or password.");}
+      else if(data.password!==password){setError("Invalid username or password.");}
+      else{onLogin(data);}
+    }catch(e){setError("Connection error — check your Supabase config.");}
+    setLoading(false);
+  };
+
+  return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:C.bgPage,padding:"1rem"}}>
+      <div style={{textAlign:"center",marginBottom:"2rem"}}>
+        <div style={{width:52,height:52,borderRadius:14,background:C.teal,margin:"0 auto 14px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h1 style={{fontSize:22,fontWeight:700,margin:"0 0 4px",color:C.text}}>Connected Flow Management</h1>
+        <p style={{fontSize:13,color:C.muted}}>Payment Portal</p>
+      </div>
+      <div style={{...card,width:"100%",maxWidth:400,boxShadow:"0 1px 8px rgba(0,0,0,0.07)"}}>
+        <h2 style={{fontSize:15,fontWeight:600,margin:"0 0 1.25rem",color:C.text}}>Sign in to your account</h2>
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Username</label>
+          <input style={inp} value={username} placeholder="Enter username" onChange={e=>setUsername(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/>
+        </div>
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Password</label>
+          <input style={inp} type="password" value={password} placeholder="Enter password" onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/>
+        </div>
+        {error&&<p style={{fontSize:13,color:C.danger,margin:"0 0 12px"}}>{error}</p>}
+        <button style={{...primBtn,width:"100%",padding:10,opacity:loading?0.6:1}} onClick={submit} disabled={loading}>
+          {loading?"Signing in…":"Sign in"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── MODEL DASHBOARD ───────────────────────────────────────────────────────────
+function ModelDashboard({user,onLogout}){
+  const [uploads,setUploads]=useState([]);
+  const [week,setWeek]=useState(getWeekLabel());
+  const [amount,setAmount]=useState("");
+  const [image,setImage]=useState(null);
+  const [preview,setPreview]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [success,setSuccess]=useState(false);
+  const [error,setError]=useState("");
+  const [viewImg,setViewImg]=useState(null);
+  const fileRef=useRef();
+
+  const loadUploads=async()=>{
+    const{data}=await sb.from("uploads").select("*").eq("model_id",user.id).order("uploaded_at",{ascending:false});
+    if(data) setUploads(data);
+  };
+
+  useEffect(()=>{
+    loadUploads();
+    const channel=sb.channel("model-uploads-"+user.id)
+      .on("postgres_changes",{event:"*",schema:"public",table:"uploads",filter:`model_id=eq.${user.id}`},loadUploads)
+      .subscribe();
+    return()=>sb.removeChannel(channel);
+  },[user.id]);
+
+  const handleFile=e=>{
+    const file=e.target.files[0];if(!file)return;
+    if(file.size>10*1024*1024){setError("File too large — max 10 MB.");return;}
+    const reader=new FileReader();
+    reader.onload=ev=>{setImage(ev.target.result);setPreview(ev.target.result);setError("");};
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit=async()=>{
+    if(!image){setError("Please select a screenshot first.");return;}
+    if(!week.trim()){setError("Please specify the week.");return;}
+    setSaving(true);
+    try{
+      const compressed=await compressImage(image);
+      const{error:e}=await sb.from("uploads").insert([{model_id:user.id,model_name:user.name,week:week.trim(),amount:amount.trim(),image:compressed,uploaded_at:new Date().toISOString()}]);
+      if(e)throw e;
+      setSuccess(true);setImage(null);setPreview(null);setAmount("");setWeek(getWeekLabel());
+      if(fileRef.current)fileRef.current.value="";
+      setTimeout(()=>setSuccess(false),4000);
+    }catch(e){setError("Upload failed. Please try again.");}
+    setSaving(false);
+  };
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bgPage}}>
+      <TopBar user={user} onLogout={onLogout}/>
+      <div style={{maxWidth:960,margin:"0 auto",padding:"1.25rem"}}>
+        <div style={{marginBottom:"1.25rem"}}>
+          <h2 style={{margin:0,fontSize:17,fontWeight:600,color:C.text}}>Welcome back, {user.name.split(" ")[0]}</h2>
+          <p style={{margin:"3px 0 0",fontSize:13,color:C.muted}}>Submit your weekly OnlyFans payment screenshot below.</p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:"1.25rem"}}>
+
+          <div style={{...card,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 1rem",color:C.text}}>New Payment Screenshot</h3>
+            <div style={{marginBottom:12}}>
+              <label style={lbl}>Payment Week</label>
+              <input style={inp} value={week} onChange={e=>setWeek(e.target.value)} placeholder="e.g. 24 Mar – 30 Mar 2025"/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={lbl}>Amount (optional)</label>
+              <input style={inp} value={amount} onChange={e=>setAmount(e.target.value)} placeholder="e.g. £1,250.00"/>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={lbl}>Screenshot</label>
+              <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${preview?C.teal:C.borderMd}`,borderRadius:8,padding:preview?"10px":"1.5rem 1rem",textAlign:"center",cursor:"pointer",background:preview?"rgba(15,118,110,0.04)":C.bgMuted,minHeight:90,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {preview
+                  ?<img src={preview} alt="Preview" style={{maxHeight:130,maxWidth:"100%",borderRadius:6,objectFit:"contain"}}/>
+                  :<div><div style={{fontSize:28,marginBottom:6,color:C.hint}}>↑</div><p style={{margin:0,fontSize:13,color:C.muted}}>Tap to upload screenshot</p><p style={{margin:"4px 0 0",fontSize:11,color:C.hint}}>PNG, JPG — auto compressed</p></div>
+                }
+              </div>
+              <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
+              {preview&&<button style={{...outBtn,marginTop:8,fontSize:11,padding:"4px 10px"}} onClick={()=>{setImage(null);setPreview(null);if(fileRef.current)fileRef.current.value="";}}>Remove image</button>}
+            </div>
+            {error  &&<p style={{fontSize:13,color:C.danger, margin:"0 0 12px"}}>{error}</p>}
+            {success&&<p style={{fontSize:13,color:C.success,margin:"0 0 12px"}}>✓ Submitted successfully!</p>}
+            <button style={{...primBtn,width:"100%",padding:10,opacity:saving?0.6:1}} onClick={handleSubmit} disabled={saving}>
+              {saving?"Uploading…":"Submit Screenshot"}
+            </button>
+          </div>
+
+          <div style={{...card,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 1rem",color:C.text}}>My Submissions ({uploads.length})</h3>
+            {uploads.length===0
+              ?<div style={{padding:"2.5rem 0",textAlign:"center",color:C.hint,fontSize:13}}>No submissions yet.</div>
+              :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:440,overflowY:"auto"}}>
+                {uploads.map(up=>(
+                  <div key={up.id} onClick={()=>setViewImg(up)} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 12px",background:C.bgMuted,borderRadius:8,cursor:"pointer",border:`1px solid ${C.border}`}}>
+                    <img src={up.image} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:6,flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <p style={{margin:0,fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{up.week}</p>
+                      {up.amount&&<p style={{margin:0,fontSize:12,color:C.teal,fontWeight:600}}>{up.amount}</p>}
+                      <p style={{margin:0,fontSize:11,color:C.hint}}>{new Date(up.uploaded_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</p>
+                    </div>
+                    <span style={{fontSize:11,color:C.hint}}>View ›</span>
+                  </div>
+                ))}
+              </div>
+            }
+          </div>
+
+        </div>
+      </div>
+      {viewImg&&<ImageModal item={viewImg} onClose={()=>setViewImg(null)} showModel={false}/>}
+    </div>
+  );
+}
+
+// ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────
+function AdminDashboard({user,onLogout}){
+  const [users,setUsers]=useState([]);
+  const [uploads,setUploads]=useState([]);
+  const [tab,setTab]=useState("uploads");
+  const [filterModel,setFilter]=useState("all");
+  const [viewImg,setViewImg]=useState(null);
+  const [newUser,setNewUser]=useState({name:"",username:"",password:"",role:"model"});
+  const [addError,setAddError]=useState("");
+  const [addSuccess,setAddSuccess]=useState("");
+  const [delConfirm,setDelConfirm]=useState(null);
+
+  const loadAll=async()=>{
+    const[{data:u},{data:up}]=await Promise.all([
+      sb.from("users").select("*").order("created_at",{ascending:true}),
+      sb.from("uploads").select("*").order("uploaded_at",{ascending:false}),
+    ]);
+    if(u) setUsers(u);
+    if(up) setUploads(up);
+  };
+
+  useEffect(()=>{
+    loadAll();
+    const ch=sb.channel("admin-all")
+      .on("postgres_changes",{event:"*",schema:"public",table:"uploads"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"users"},loadAll)
+      .subscribe();
+    return()=>sb.removeChannel(ch);
+  },[]);
+
+  const models   =users.filter(u=>u.role==="model");
+  const filtered =filterModel==="all"?uploads:uploads.filter(u=>u.model_id===filterModel);
+  const weekCount=uploads.filter(u=>(Date.now()-new Date(u.uploaded_at))/86400000<=7).length;
+
+  const handleAddUser=async()=>{
+    setAddError("");
+    if(!newUser.name||!newUser.username||!newUser.password){setAddError("All fields are required.");return;}
+    const{data:existing}=await sb.from("users").select("id").eq("username",newUser.username.toLowerCase().trim()).single();
+    if(existing){setAddError("That username is already taken.");return;}
+    const{error:e}=await sb.from("users").insert([{...newUser,username:newUser.username.toLowerCase().trim(),name:newUser.name.trim()}]);
+    if(e){setAddError("Failed to create user. Please try again.");return;}
+    setNewUser({name:"",username:"",password:"",role:"model"});
+    setAddSuccess("User created successfully.");
+    setTimeout(()=>setAddSuccess(""),4000);
+  };
+
+  const handleDeleteUser=async(id)=>{
+    await sb.from("users").delete().eq("id",id);
+    setDelConfirm(null);
+  };
+
+  const tabBtn=(t,label)=>(
+    <button onClick={()=>setTab(t)} style={{padding:"0 18px",height:44,border:"none",background:"none",fontSize:13,fontWeight:500,cursor:"pointer",color:tab===t?C.teal:C.muted,borderBottom:tab===t?`2px solid ${C.teal}`:"2px solid transparent"}}>
+      {label}
+    </button>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bgPage}}>
+      <TopBar user={user} onLogout={onLogout}/>
+      <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,padding:"0 1.25rem",display:"flex"}}>
+        {tabBtn("uploads","Payment Screenshots")}
+        {tabBtn("users","Manage Users")}
+      </div>
+      <div style={{maxWidth:1140,margin:"0 auto",padding:"1.25rem"}}>
+
+        {tab==="uploads"&&<>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:"1.5rem"}}>
+            {[{label:"Total Submissions",value:uploads.length},{label:"Active Models",value:models.length},{label:"This Week",value:weekCount}].map(s=>(
+              <div key={s.label} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:"1rem"}}>
+                <p style={{margin:"0 0 4px",fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:600}}>{s.label}</p>
+                <p style={{margin:0,fontSize:32,fontWeight:700,color:C.text,lineHeight:1.1}}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1rem",flexWrap:"wrap"}}>
+            <label style={{...lbl,margin:0}}>Model:</label>
+            <select style={{...inp,width:"auto",padding:"6px 10px",minWidth:200}} value={filterModel} onChange={e=>setFilter(e.target.value)}>
+              <option value="all">All models ({models.length})</option>
+              {models.map(m=><option key={m.id} value={m.id}>{m.name} ({uploads.filter(u=>u.model_id===m.id).length})</option>)}
+            </select>
+            <span style={{fontSize:12,color:C.hint}}>{filtered.length} screenshot{filtered.length!==1?"s":""}</span>
+          </div>
+          {filtered.length===0
+            ?<div style={{...card,textAlign:"center",padding:"3rem 1rem",color:C.hint,fontSize:13}}>No screenshots yet. Models will appear here once they submit.</div>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"1rem"}}>
+              {filtered.map(up=>(
+                <div key={up.id} onClick={()=>setViewImg(up)} style={{...card,cursor:"pointer",padding:"0.85rem"}}>
+                  <img src={up.image} alt="" style={{width:"100%",height:110,objectFit:"cover",borderRadius:8,marginBottom:10}}/>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <Avatar name={up.model_name} size={22}/>
+                    <span style={{fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{up.model_name}</span>
+                  </div>
+                  <p style={{margin:"0 0 2px",fontSize:12,color:C.muted}}>{up.week}</p>
+                  {up.amount&&<p style={{margin:"0 0 2px",fontSize:13,fontWeight:600,color:C.teal}}>{up.amount}</p>}
+                  <p style={{margin:0,fontSize:11,color:C.hint}}>{new Date(up.uploaded_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</p>
+                </div>
+              ))}
+            </div>
+          }
+        </>}
+
+        {tab==="users"&&
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:"1.25rem"}}>
+            <div style={{...card,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+              <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 1rem"}}>Add New User</h3>
+              {[{label:"Full Name",key:"name",ph:"e.g. Jessica Smith",type:"text"},{label:"Username",key:"username",ph:"e.g. jessica_s",type:"text"},{label:"Password",key:"password",ph:"Set a secure password",type:"password"}].map(f=>(
+                <div key={f.key} style={{marginBottom:12}}>
+                  <label style={lbl}>{f.label}</label>
+                  <input style={inp} type={f.type} value={newUser[f.key]} placeholder={f.ph} onChange={e=>setNewUser(p=>({...p,[f.key]:e.target.value}))}/>
+                </div>
+              ))}
+              <div style={{marginBottom:18}}>
+                <label style={lbl}>Role</label>
+                <select style={inp} value={newUser.role} onChange={e=>setNewUser(p=>({...p,role:e.target.value}))}>
+                  <option value="model">Model</option>
+                  <option value="admin">Team / Admin</option>
+                </select>
+              </div>
+              {addError  &&<p style={{fontSize:13,color:C.danger, margin:"0 0 10px"}}>{addError}</p>}
+              {addSuccess&&<p style={{fontSize:13,color:C.success,margin:"0 0 10px"}}>✓ {addSuccess}</p>}
+              <button style={{...primBtn,width:"100%",padding:10}} onClick={handleAddUser}>Create User</button>
+            </div>
+            <div style={{...card,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+              <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 1rem"}}>All Users ({users.length})</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:520,overflowY:"auto"}}>
+                {users.map(u=>{
+                  const count=uploads.filter(up=>up.model_id===u.id).length;
+                  return(
+                    <div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:C.bgMuted,border:`1px solid ${C.border}`,borderRadius:8}}>
+                      <Avatar name={u.name} size={36}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <p style={{margin:0,fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.name}</p>
+                        <p style={{margin:0,fontSize:11,color:C.muted}}>@{u.username}{u.role==="model"?` · ${count} upload${count!==1?"s":""}`:""}</p>
+                      </div>
+                      <span style={{fontSize:10,padding:"2px 9px",borderRadius:12,fontWeight:600,background:u.role==="admin"?C.tealLt:"#f3f4f6",color:u.role==="admin"?C.teal:C.muted,border:`1px solid ${u.role==="admin"?C.teal:C.borderMd}`,flexShrink:0}}>{u.role}</span>
+                      <button style={{fontSize:11,color:C.danger,background:"none",border:"none",cursor:"pointer",padding:"4px 6px",flexShrink:0}} onClick={()=>setDelConfirm(u)}>Remove</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      {viewImg&&<ImageModal item={viewImg} onClose={()=>setViewImg(null)} showModel={true}/>}
+
+      {delConfirm&&(
+        <div onClick={()=>setDelConfirm(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999,padding:"1rem"}}>
+          <div onClick={e=>e.stopPropagation()} style={{...card,maxWidth:360,width:"100%",boxShadow:"0 4px 24px rgba(0,0,0,0.15)"}}>
+            <h3 style={{margin:"0 0 8px",fontSize:15,fontWeight:600}}>Remove user?</h3>
+            <p style={{fontSize:13,color:C.muted,margin:"0 0 1.5rem",lineHeight:1.5}}>This will remove <strong>{delConfirm.name}</strong> (@{delConfirm.username}). Their screenshots remain on record.</p>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button style={outBtn} onClick={()=>setDelConfirm(null)}>Cancel</button>
+              <button style={danBtn} onClick={()=>handleDeleteUser(delConfirm.id)}>Remove user</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ROOT ──────────────────────────────────────────────────────────────────────
+function App(){
+  const [me,setMe]=useState(null);
+  const [booting,setBoot]=useState(true);
+
+  useEffect(()=>{
+    if(SETUP_NEEDED){setBoot(false);return;}
+    // Seed admin account if no users exist yet
+    sb.from("users").select("id").limit(1).then(({data})=>{
+      if(!data||data.length===0){
+        sb.from("users").insert([{username:"admin",password:"admin123",role:"admin",name:"Management Team"}]);
+      }
+      setBoot(false);
+    }).catch(()=>setBoot(false));
+  },[]);
+
+  if(SETUP_NEEDED) return <SetupScreen/>;
+
+  if(booting) return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bgPage}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{width:40,height:40,borderRadius:10,background:C.teal,margin:"0 auto 14px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <p style={{fontSize:13,color:C.muted}}>Connecting…</p>
+      </div>
+    </div>
+  );
+
+  if(!me) return <LoginPage onLogin={setMe}/>;
+  if(me.role==="admin") return <AdminDashboard user={me} onLogout={()=>setMe(null)}/>;
+  return <ModelDashboard user={me} onLogout={()=>setMe(null)}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
