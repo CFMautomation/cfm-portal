@@ -381,6 +381,9 @@ function AdminDashboard({user,onLogout}){
   const [uploads,setUploads]=useState([]);
   const [tab,setTab]=useState("uploads");
   const [filterModel,setFilter]=useState("all");
+  const [timeframe,setTimeframe]=useState("all");
+  const [customFrom,setCustomFrom]=useState("");
+  const [customTo,setCustomTo]=useState("");
   const [viewImg,setViewImg]=useState(null);
   const [newUser,setNewUser]=useState({name:"",username:"",password:"",role:"model"});
   const [addError,setAddError]=useState("");
@@ -405,9 +408,25 @@ function AdminDashboard({user,onLogout}){
     return()=>sb.removeChannel(ch);
   },[]);
 
-  const models   =users.filter(u=>u.role==="model");
-  const filtered =filterModel==="all"?uploads:uploads.filter(u=>u.model_id===filterModel);
+  const models=users.filter(u=>u.role==="model");
   const weekCount=uploads.filter(u=>(Date.now()-new Date(u.uploaded_at))/86400000<=7).length;
+
+  const applyTimeframe=(list)=>{
+    const now=new Date();
+    const startOfDay=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x;};
+    const getMonday=d=>{const x=new Date(d);const day=x.getDay()||7;x.setDate(x.getDate()-day+1);x.setHours(0,0,0,0);return x;};
+    if(timeframe==="this_week"){const mon=getMonday(now);return list.filter(u=>new Date(u.uploaded_at)>=mon);}
+    if(timeframe==="last_week"){const thisMon=getMonday(now);const lastMon=new Date(thisMon);lastMon.setDate(thisMon.getDate()-7);return list.filter(u=>{const d=new Date(u.uploaded_at);return d>=lastMon&&d<thisMon;});}
+    if(timeframe==="custom"){
+      const from=customFrom?startOfDay(customFrom):null;
+      const to=customTo?new Date(new Date(customTo).setHours(23,59,59,999)):null;
+      return list.filter(u=>{const d=new Date(u.uploaded_at);if(from&&d<from)return false;if(to&&d>to)return false;return true;});
+    }
+    return list;
+  };
+
+  const byModel=filterModel==="all"?uploads:uploads.filter(u=>u.model_id===filterModel);
+  const filtered=applyTimeframe(byModel);
 
   const handleAddUser=async()=>{
     setAddError("");
@@ -450,13 +469,34 @@ function AdminDashboard({user,onLogout}){
               </div>
             ))}
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1rem",flexWrap:"wrap"}}>
-            <label style={{...lbl,margin:0}}>Model:</label>
-            <select style={{...inp,width:"auto",padding:"6px 10px",minWidth:200}} value={filterModel} onChange={e=>setFilter(e.target.value)}>
-              <option value="all">All models ({models.length})</option>
-              {models.map(m=><option key={m.id} value={m.id}>{m.name} ({uploads.filter(u=>u.model_id===m.id).length})</option>)}
-            </select>
-            <span style={{fontSize:12,color:C.hint}}>{filtered.length} screenshot{filtered.length!==1?"s":""}</span>
+          <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:"1rem",marginBottom:"1rem"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:timeframe==="custom"?12:0}}>
+              <label style={{...lbl,margin:0,whiteSpace:"nowrap"}}>Timeframe:</label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[{v:"all",l:"All Time"},{v:"this_week",l:"This Week"},{v:"last_week",l:"Last Week"},{v:"custom",l:"Custom Range"}].map(opt=>(
+                  <button key={opt.v} onClick={()=>setTimeframe(opt.v)} style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${timeframe===opt.v?C.teal:C.borderMd}`,background:timeframe===opt.v?C.teal:"transparent",color:timeframe===opt.v?"#fff":C.muted,fontSize:12,fontWeight:500,cursor:"pointer"}}>
+                    {opt.l}
+                  </button>
+                ))}
+              </div>
+              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <label style={{...lbl,margin:0,whiteSpace:"nowrap"}}>Model:</label>
+                <select style={{...inp,width:"auto",padding:"6px 10px",minWidth:180}} value={filterModel} onChange={e=>setFilter(e.target.value)}>
+                  <option value="all">All models ({models.length})</option>
+                  {models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+            </div>
+            {timeframe==="custom"&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <label style={{...lbl,margin:0}}>From:</label>
+                <input type="date" style={{...inp,width:"auto",padding:"5px 10px"}} value={customFrom} onChange={e=>setCustomFrom(e.target.value)}/>
+                <label style={{...lbl,margin:0}}>To:</label>
+                <input type="date" style={{...inp,width:"auto",padding:"5px 10px"}} value={customTo} onChange={e=>setCustomTo(e.target.value)}/>
+                <span style={{fontSize:12,color:C.hint,marginLeft:4}}>{filtered.length} result{filtered.length!==1?"s":""}</span>
+              </div>
+            )}
+            {timeframe!=="custom"&&<p style={{margin:"8px 0 0",fontSize:12,color:C.hint}}>{filtered.length} screenshot{filtered.length!==1?"s":""}</p>}
           </div>
           {filtered.length===0
             ?<div style={{...card,textAlign:"center",padding:"3rem 1rem",color:C.hint,fontSize:13}}>No screenshots yet. Models will appear here once they submit.</div>
