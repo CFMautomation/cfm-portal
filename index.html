@@ -381,6 +381,7 @@ function AdminDashboard({user,onLogout}){
   const [uploads,setUploads]=useState([]);
   const [tab,setTab]=useState("uploads");
   const [filterModel,setFilter]=useState("all");
+  const [filterInvoiced,setFilterInvoiced]=useState("all");
   const [timeframe,setTimeframe]=useState("all");
   const [customFrom,setCustomFrom]=useState("");
   const [customTo,setCustomTo]=useState("");
@@ -426,7 +427,8 @@ function AdminDashboard({user,onLogout}){
   };
 
   const byModel=filterModel==="all"?uploads:uploads.filter(u=>u.model_id===filterModel);
-  const filtered=applyTimeframe(byModel);
+  const byTime=applyTimeframe(byModel);
+  const filtered=filterInvoiced==="all"?byTime:filterInvoiced==="invoiced"?byTime.filter(u=>u.invoiced):byTime.filter(u=>!u.invoiced);
 
   const handleAddUser=async()=>{
     setAddError("");
@@ -485,6 +487,14 @@ function AdminDashboard({user,onLogout}){
                   <option value="all">All models ({models.length})</option>
                   {models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
+                <label style={{...lbl,margin:0,whiteSpace:"nowrap"}}>Status:</label>
+                <div style={{display:"flex",gap:6}}>
+                  {[{v:"all",l:"All"},{v:"pending",l:"Pending"},{v:"invoiced",l:"Invoiced"}].map(opt=>(
+                    <button key={opt.v} onClick={()=>setFilterInvoiced(opt.v)} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${filterInvoiced===opt.v?C.teal:C.borderMd}`,background:filterInvoiced===opt.v?C.teal:"transparent",color:filterInvoiced===opt.v?"#fff":C.muted,fontSize:12,fontWeight:500,cursor:"pointer"}}>
+                      {opt.l}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             {timeframe==="custom"&&(
@@ -502,15 +512,33 @@ function AdminDashboard({user,onLogout}){
             ?<div style={{...card,textAlign:"center",padding:"3rem 1rem",color:C.hint,fontSize:13}}>No screenshots yet. Models will appear here once they submit.</div>
             :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"1rem"}}>
               {filtered.map(up=>(
-                <div key={up.id} onClick={()=>setViewImg(up)} style={{...card,cursor:"pointer",padding:"0.85rem"}}>
-                  <img src={up.image} alt="" style={{width:"100%",height:110,objectFit:"cover",borderRadius:8,marginBottom:10}}/>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                    <Avatar name={up.model_name} size={22}/>
-                    <span style={{fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{up.model_name}</span>
+                <div key={up.id} style={{...card,padding:"0.85rem",opacity:up.invoiced?0.7:1,position:"relative"}}>
+                  <div onClick={()=>setViewImg(up)} style={{cursor:"pointer"}}>
+                    <div style={{position:"relative",marginBottom:10}}>
+                      <img src={up.image} alt="" style={{width:"100%",height:110,objectFit:"cover",borderRadius:8}}/>
+                      {up.invoiced&&<div style={{position:"absolute",inset:0,borderRadius:8,background:"rgba(15,118,110,0.18)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        <div style={{background:C.teal,borderRadius:"50%",width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                      </div>}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <Avatar name={up.model_name} size={22}/>
+                      <span style={{fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{up.model_name}</span>
+                    </div>
+                    <p style={{margin:"0 0 2px",fontSize:12,color:C.muted}}>{up.week}</p>
+                    {up.amount&&<p style={{margin:"0 0 2px",fontSize:13,fontWeight:600,color:C.teal}}>{up.amount}</p>}
+                    <p style={{margin:"0 0 8px",fontSize:11,color:C.hint}}>{new Date(up.uploaded_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</p>
                   </div>
-                  <p style={{margin:"0 0 2px",fontSize:12,color:C.muted}}>{up.week}</p>
-                  {up.amount&&<p style={{margin:"0 0 2px",fontSize:13,fontWeight:600,color:C.teal}}>{up.amount}</p>}
-                  <p style={{margin:0,fontSize:11,color:C.hint}}>{new Date(up.uploaded_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</p>
+                  <button
+                    onClick={async(e)=>{e.stopPropagation();await sb.from("uploads").update({invoiced:!up.invoiced}).eq("id",up.id);loadAll();}}
+                    style={{width:"100%",padding:"6px",borderRadius:6,border:`1px solid ${up.invoiced?C.teal:C.borderMd}`,background:up.invoiced?C.tealLt:"transparent",color:up.invoiced?C.teal:C.muted,fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}
+                  >
+                    {up.invoiced
+                      ?<><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Invoiced</>
+                      :<>Mark as Invoiced</>
+                    }
+                  </button>
                 </div>
               ))}
             </div>
